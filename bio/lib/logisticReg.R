@@ -49,7 +49,7 @@ corrplot(corrmat_M, method="circle")
 
 ### logistic regression 
 x = biodata[,-1]
-y = biodata[,1]
+y = as.integer(biodata[,1])-1
 xm = apply(x,2,mean)
 xv = apply(x,2,sd)
 x = sweep(x, 2, xm, "-")
@@ -69,7 +69,7 @@ BIC(fit_full)
 # the simplest model
 fit_init =glm(diagnosis~1,  
         data = cdata, family = binomial())
-BIC(fit_init)
+AIC(fit_init)
 
 # forward selection
 model_s = step(fit_init, 
@@ -77,12 +77,12 @@ model_s = step(fit_init,
                           upper=formula(fit_full)),
                direction = 'forward')
 summary(model_s)
-BIC(model_s)
+AIC(model_s)
 
 # glmnet
 x = as.matrix(cdata[,-1])
 class(x)
-y = as.integer(cdata$diagnosis)-1
+y = as.integer(cdata$diagnosis)
 fit <- glmnet(x, y, family = "binomial", standardize = T) 
 plot(fit)
 # model selection by cv
@@ -104,11 +104,49 @@ for ( i in 1:fit$dim[2])
 {
   xb = pred[,i]
   loglik = sum(y*xb  - log( 1 + exp(xb)))
-  v[i] = -2*loglik + log(n)*fit$df[i]
+  v[i] = -2*loglik + 2*fit$df[i]
 }
 fit$df[which.min(v)]
 barplot(fit$beta[,which.min(v)],las = 2 )
 min(v)
 
-
+# compare the Model performances
+# prediction error
+v1 = v2 = c()
+for (iter in 1:50)
+{
+  cat("iter::", iter, '\n')
+  idx = sample(1:n, trunc(n*0.7))
+  cdata.tr = cdata[idx,]
+  cdata.te = cdata[-idx,]
+  # forward selection
+  fit_init =glm(diagnosis~1,  
+          data = cdata.tr, family = binomial())
+  fit_full =glm(diagnosis~.,  
+          data = cdata.tr, family = binomial())
+  model_s = step(fit_init, 
+                 scope=list(lower=formula(fit_init),
+                            upper=formula(fit_full)),
+                 direction = 'forward',
+                 trace = 0)
+  pred = predict(model_s, cdata.te, type = 'response')
+  v1[iter] = mean(as.integer(pred>0.5)  == cdata.te$diagnosis)
+  
+  # lasso
+  x = as.matrix(cdata.tr[,-1])
+  y = as.integer(cdata.tr$diagnosis)
+  # model selection by cv
+  fit_cv = cv.glmnet(x,as.integer(y), nfold = 5)
+  i = which.min(fit_cv$cvm)
+  fit <- glmnet(x, y, family = "binomial", standardize = T,
+                lambda = fit_cv$lambda[i]) 
+  predx = as.matrix(cdata.te[,-1])
+  predy = as.matrix(cdata.te[,1])
+  pred = predict(fit, predx, type = 'response')
+  v2[iter] = mean(as.integer(pred>0.5)  == cdata.te$diagnosis)
+}
+boxplot(v1, v2, main = 'accuracy plot',
+        names = c('FS','Lasso'), 
+        col = c("orange","lightblue"))
+  
 
