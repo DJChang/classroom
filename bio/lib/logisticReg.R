@@ -7,15 +7,19 @@ table(biodata$id)
 biodata$X <- NULL
 str(biodata)
 table(biodata$diagnosis)
+
 id = biodata[,1]
 biodata = biodata[,-1]
 
 summary(biodata[,-1])[3,]
 m1 = apply(biodata[,-1], 2, FUN = mean)
 m2 = apply(biodata[,-1], 2, FUN = sd)
+
+
 # fig
-barplot(m1)
-barplot(m2)
+par(mai = c(2.5,1,1,1))
+barplot(m1, main = 'mean', las = 2)
+barplot(m2, main = 'sd', las = 2)
 
 
 library(dplyr)
@@ -32,7 +36,6 @@ for (j in 1:ncol(m))
   r[j] = fit$p.value
 }
 names(r) = names(m)
-par(mai = c(2.5,1,1,1))
 barplot(r, las = 2)
 
 
@@ -46,10 +49,75 @@ corrplot(corrmat_B, method="circle")
 
 corrmat_M= cor(biodata[biodata$diagnosis == "M",-(1:2)])
 corrplot(corrmat_M, method="circle")
-
-### logistic regression 
+### logistic regression
 x = biodata[,-1]
 y = as.integer(biodata[,1])-1
+cdata = as.data.frame(cbind(y,x))
+names(cdata) = names(biodata)
+plot(y~radius_mean, data = cdata,
+     ylim = c(-0.5, 1.5),
+     col = c("lightblue",
+             "orange")[biodata[,1]],
+     ylab = 'prob')
+# linear regression 
+fit = lm(y~radius_mean, data= cdata)
+abline(a = fit$coefficients[1], 
+       b = fit$coefficients[2], 
+       col ='blue', lwd = 1.5)
+# logistic regression with a single predictor
+library(MASS)
+fit = glm(y~radius_mean, data= cdata,
+          family = binomial)
+rb = sort(cdata$radius_mean)
+yhat = sort(predict(fit, type = 'response'))
+plot(y~radius_mean, data = cdata,
+     ylim = c(-0.5, 1.5),
+     col = c("lightblue",
+             "orange")[biodata[,1]],
+     ylab = 'prob')
+lines(rb, yhat, col = 'blue', lwd=1.5)
+
+## coefficients
+fit$coefficients
+
+# x%*%beta
+predict(fit, type = 'link')
+## yhat
+predict(fit, type = 'response')
+
+# measure the performance
+# accuracy
+predy = as.integer( predict(fit, type = 'response') > 0.5 )
+mean(predy == y)
+
+# TP and FP
+rtable = data.frame(pred = predy, ground_truth = y)
+xtabs( ~ pred+ ground_truth, data = rtable)
+
+a = xtabs( ~ pred+ ground_truth, data = rtable)
+prop.table(a, margin = 1)
+prop.table(a, margin = 2)
+
+# AUC
+library(pROC)
+score = predict(fit, type = 'response')
+y = cdata$diagnosis
+roc.fit =roc(y, score, ci = T)
+plot( x = 1-roc.fit$specificities, 
+      y = roc.fit$sensitivities,
+      type = 'l', xlab = 'FP rate', ylab = 'TP rate')
+roc.fit
+
+
+
+# logistic regression with multiple predictors
+fit = glm(y~radius_mean + radius_se, data= cdata,
+          family = binomial)
+fit
+predict(fit, type = 'response')
+
+
+# standardization
 xm = apply(x,2,mean)
 xv = apply(x,2,sd)
 x = sweep(x, 2, xm, "-")
@@ -57,7 +125,9 @@ x = sweep(x, 2, xv, "/")
 
 cdata = as.data.frame(cbind(y,x))
 names(cdata) = names(biodata)
-library(MASS)
+
+# model selection
+
 # full model
 fit_full=glm(diagnosis~.,  data = cdata, family = binomial())
 barplot(fit_full$coefficients, las = 2)
@@ -80,6 +150,7 @@ summary(model_s)
 AIC(model_s)
 
 # glmnet
+library(glmnet)
 x = as.matrix(cdata[,-1])
 class(x)
 y = as.integer(cdata$diagnosis)
